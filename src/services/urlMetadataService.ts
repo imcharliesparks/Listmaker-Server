@@ -1,10 +1,117 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import * as dns from 'dns';
+import * as net from 'net';
+import { promisify } from 'util';
 import { UrlMetadata } from '../types';
 
+const dnsLookup = promisify(dns.lookup);
+
+/**
+ * Custom error for URL validation failures (SSRF protection)
+ */
+export class UrlValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UrlValidationError';
+  }
+}
+
 export class UrlMetadataService {
-  async extractMetadata(url: string): Promise<UrlMetadata> {
+  /**
+   * List of private/reserved IP ranges that should be blocked
+   */
+  private static readonly BLOCKED_IP_PATTERNS = [
+    /^127\./,                        // Loopback (127.0.0.0/8)
+    /^10\./,                         // Private (10.0.0.0/8)
+    /^192\.168\./,                   // Private (192.168.0.0/16)
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // Private (172.16.0.0/12)
+    /^169\.254\./,                   // Link-local (169.254.0.0/16)
+    /^0\./,                          // Current network (0.0.0.0/8)
+    /^224\./,                        // Multicast (224.0.0.0/4)
+    /^240\./,                        // Reserved (240.0.0.0/4)
+    /^255\./,                        // Broadcast
+    /^100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\./, // Shared (100.64.0.0/10)
+    /^198\.1[89]\./,                 // Benchmark (198.18.0.0/15)
+    /^::1$/,                         // IPv6 loopback
+    /^fc00:/i,                       // IPv6 unique local
+    /^fd00:/i,                       // IPv6 unique local
+    /^fe80:/i,                       // IPv6 link-local
+  ];
+
+  /**
+   * Validates a URL to prevent SSRF attacks
+   * - Only allows http and https protocols
+   * - Blocks requests to private/reserved IP ranges
+   * - Resolves hostnames to check their IP addresses
+   */
+  private async validateUrl(url: string): Promise<void> {
+    let parsedUrl: URL;
     try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new UrlValidationError('Invalid URL format');
+    }
+
+    // Only allow http and https protocols
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new UrlValidationError(
+        `Invalid protocol: ${parsedUrl.protocol}. Only http and https are allowed`
+      );
+    }
+
+    const hostname = parsedUrl.hostname;
+
+    // Block localhost variants
+    if (
+      hostname === 'localhost' ||
+      hostname === 'localhost.localdomain' ||
+      hostname.endsWith('.localhost')
+    ) {
+      throw new UrlValidationError('Requests to localhost are not allowed');
+    }
+
+    // Check if hostname is already an IP address
+    if (net.isIP(hostname)) {
+      if (this.isBlockedIp(hostname)) {
+        throw new UrlValidationError(
+          'Requests to private/reserved IP addresses are not allowed'
+        );
+      }
+    } else {
+      // Resolve hostname to IP and validate
+      try {
+        const result = await dnsLookup(hostname);
+        if (this.isBlockedIp(result.address)) {
+          throw new UrlValidationError(
+            'Requests to private/reserved IP addresses are not allowed'
+          );
+        }
+      } catch (error) {
+        if (error instanceof UrlValidationError) {
+          throw error;
+        }
+        throw new UrlValidationError(
+          `Unable to resolve hostname: ${hostname}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Checks if an IP address matches any blocked pattern
+   */
+  private isBlockedIp(ip: string): boolean {
+    return UrlMetadataService.BLOCKED_IP_PATTERNS.some(
+      (pattern) => pattern.test(ip)
+    );
+  }
+
+  public async extractMetadata(url: string): Promise<UrlMetadata> {
+    try {
+      // Validate URL to prevent SSRF attacks
+      await this.validateUrl(url);
+
       // Detect source type
       const sourceType = this.detectSourceType(url);
 
