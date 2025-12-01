@@ -3,3 +3,6 @@ dist/
 temp/
 **/**/*.log
 config.js
+.env
+firebase-service-account.json
+.DS_Store
