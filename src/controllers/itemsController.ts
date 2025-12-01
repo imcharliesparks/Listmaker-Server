@@ -11,6 +11,12 @@ export const addItem = async (req: AuthRequest, res: Response) => {
     if (!listId || !url) {
       return res.status(400).json({ error: 'List ID and URL are required' });
     }
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid URL format' });
+    }
 
     // Verify list belongs to user
     const listCheck = await pool.query(
