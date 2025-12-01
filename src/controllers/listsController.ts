@@ -7,8 +7,11 @@ export const createList = async (req: AuthRequest, res: Response) => {
     const { uid } = req.user!;
     const { title, description, isPublic } = req.body;
 
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
+    if (typeof title !== 'string' || title.trim().length === 0) {
+      return res.status(400).json({ error: 'Title must not be empty or whitespace only' });
+    }
+    if (title.trim().length > 255) {
+      return res.status(400).json({ error: 'Title must not exceed 255 characters' });
     }
 
     const query = `
