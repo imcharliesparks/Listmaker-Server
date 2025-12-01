@@ -50,7 +50,14 @@ app.use('/api/items', itemsRoutes);
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  if (process.env.NODE_ENV === 'development') {
+    res.status(500).json({
+      error: err.message || 'Internal Server Error',
+      stack: err.stack,
+    });
+  } else {
+    res.status(500).json({ error: 'Something went wrong!' });
+  }
 });
 
 // Start server
