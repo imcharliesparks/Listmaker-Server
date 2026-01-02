@@ -10,7 +10,7 @@ import childProcess from 'child_process';
   try {
     // Remove current build
     await remove('./dist/');
-    await exec('npm run lint', './');
+    await exec('bun run lint', './');
     await exec('tsc --build tsconfig.prod.json', './');
     // Copy
     await copy('./src/public', './dist/public');

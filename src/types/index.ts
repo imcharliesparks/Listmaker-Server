@@ -40,8 +40,8 @@ export interface Item {
  */
 export interface AuthRequest extends Request {
   user?: {
-    uid: string; // Clerk User ID
-    email?: string;
+    uid: string, // Clerk User ID
+    email?: string,
   };
 }
 

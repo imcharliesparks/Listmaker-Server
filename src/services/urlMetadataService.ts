@@ -56,7 +56,7 @@ export class UrlMetadataService {
     // Only allow http and https protocols
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       throw new UrlValidationError(
-        `Invalid protocol: ${parsedUrl.protocol}. Only http and https are allowed`
+        `Invalid protocol: ${parsedUrl.protocol}. Only http and https are allowed`,
       );
     }
 
@@ -75,7 +75,7 @@ export class UrlMetadataService {
     if (net.isIP(hostname)) {
       if (this.isBlockedIp(hostname)) {
         throw new UrlValidationError(
-          'Requests to private/reserved IP addresses are not allowed'
+          'Requests to private/reserved IP addresses are not allowed',
         );
       }
     } else {
@@ -84,7 +84,7 @@ export class UrlMetadataService {
         const result = await dnsLookup(hostname);
         if (this.isBlockedIp(result.address)) {
           throw new UrlValidationError(
-            'Requests to private/reserved IP addresses are not allowed'
+            'Requests to private/reserved IP addresses are not allowed',
           );
         }
       } catch (error) {
@@ -92,7 +92,7 @@ export class UrlMetadataService {
           throw error;
         }
         throw new UrlValidationError(
-          `Unable to resolve hostname: ${hostname}`
+          `Unable to resolve hostname: ${hostname}`,
         );
       }
     }
@@ -103,7 +103,7 @@ export class UrlMetadataService {
    */
   private isBlockedIp(ip: string): boolean {
     return UrlMetadataService.BLOCKED_IP_PATTERNS.some(
-      (pattern) => pattern.test(ip)
+      (pattern) => pattern.test(ip),
     );
   }
 
@@ -187,7 +187,7 @@ export class UrlMetadataService {
     // Use oEmbed API (no API key required)
     try {
       const response = await axios.get(
-        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
       );
 
       return {

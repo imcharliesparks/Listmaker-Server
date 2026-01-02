@@ -14,7 +14,7 @@ const clerkClient = createClerkClient({
 export const authenticate = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const authHeader = req.headers.authorization;
@@ -42,7 +42,7 @@ export const authenticate = async (
 
       // Get primary email address
       const email = user.emailAddresses.find(
-        e => e.id === user.primaryEmailAddressId
+        e => e.id === user.primaryEmailAddressId,
       )?.emailAddress;
 
       if (!email) {

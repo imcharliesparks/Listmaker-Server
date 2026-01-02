@@ -93,7 +93,7 @@ export default [
       'n/no-process-env': 1,
       'n/no-missing-import': 0,
       'n/no-unpublished-import': 0,
-      'prefer-const': 'warn',
+      'prefer-const': 'warn'
     },
   },
 ];
