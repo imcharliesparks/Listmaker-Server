@@ -1,8 +1,18 @@
-import { isString } from 'jet-validators';
+import { isOptionalDate, isOptionalString, isNonEmptyString } from 'jet-validators';
 import { parseObject, TParseOnError } from 'jet-validators/utils';
 
-import { isRelationalKey, transIsDate } from '@src/common/util/validators';
 import { IModel } from './common/types';
+
+
+/******************************************************************************
+                                 Types
+******************************************************************************/
+
+export interface IUser extends IModel {
+  id?: string;
+  name?: string;
+  email: string;
+}
 
 
 /******************************************************************************
@@ -10,33 +20,25 @@ import { IModel } from './common/types';
 ******************************************************************************/
 
 const DEFAULT_USER_VALS = (): IUser => ({
-  id: -1,
-  name: '',
-  created: new Date(),
+  id: undefined,
+  name: undefined,
   email: '',
+  created: new Date(),
+  updated: new Date(),
 });
-
-
-/******************************************************************************
-                                  Types
-******************************************************************************/
-
-export interface IUser extends IModel {
-  name: string;
-  email: string;
-}
 
 
 /******************************************************************************
                                   Setup
 ******************************************************************************/
 
-// Initialize the "parseUser" function
+// Initialize the "parseUser" function. Require an id/email, allow optional name.
 const parseUser = parseObject<IUser>({
-  id: isRelationalKey,
-  name: isString,
-  email: isString,
-  created: transIsDate,
+  id: isOptionalString,
+  name: isOptionalString,
+  email: isNonEmptyString,
+  created: isOptionalDate,
+  updated: isOptionalDate,
 });
 
 
@@ -45,7 +47,7 @@ const parseUser = parseObject<IUser>({
 ******************************************************************************/
 
 /**
- * New user object.
+ * Create a new user object with sensible defaults and validation.
  */
 function __new__(user?: Partial<IUser>): IUser {
   const retVal = { ...DEFAULT_USER_VALS(), ...user };
@@ -55,7 +57,7 @@ function __new__(user?: Partial<IUser>): IUser {
 }
 
 /**
- * Check is a user object. For the route validation.
+ * Check if the argument is a valid user object for route validation.
  */
 function test(arg: unknown, errCb?: TParseOnError): arg is IUser {
   return !!parseUser(arg, errCb);

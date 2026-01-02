@@ -1,7 +1,21 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import pool from '../config/database';
+import { prisma } from '../config/prisma';
 import urlMetadataService from '../services/urlMetadataService';
+
+const serializeItem = (item: any) => ({
+  id: item.id,
+  list_id: item.listId,
+  url: item.url,
+  title: item.title,
+  description: item.description,
+  thumbnail_url: item.thumbnailUrl,
+  source_type: item.sourceType,
+  metadata: item.metadata,
+  position: item.position,
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
 
 export const addItem = async (req: AuthRequest, res: Response) => {
   try {
@@ -11,6 +25,10 @@ export const addItem = async (req: AuthRequest, res: Response) => {
     if (!listId || !url) {
       return res.status(400).json({ error: 'List ID and URL are required' });
     }
+    const listIdNum = Number(listId);
+    if (Number.isNaN(listIdNum)) {
+      return res.status(400).json({ error: 'List ID must be a number' });
+    }
     // Validate URL format
     try {
       new URL(url);
@@ -19,12 +37,11 @@ export const addItem = async (req: AuthRequest, res: Response) => {
     }
 
     // Verify list belongs to user
-    const listCheck = await pool.query(
-      'SELECT * FROM lists WHERE id = $1 AND user_id = $2',
-      [listId, uid]
-    );
+    const listCheck = await prisma.list.findFirst({
+      where: { id: listIdNum, userId: uid },
+    });
 
-    if (listCheck.rows.length === 0) {
+    if (!listCheck) {
       return res.status(404).json({ error: 'List not found' });
     }
 
@@ -32,31 +49,27 @@ export const addItem = async (req: AuthRequest, res: Response) => {
     const metadata = await urlMetadataService.extractMetadata(url);
 
     // Get next position
-    const positionResult = await pool.query(
-      'SELECT COALESCE(MAX(position), -1) + 1 as next_position FROM items WHERE list_id = $1',
-      [listId]
-    );
-    const nextPosition = positionResult.rows[0].next_position;
+    const positionResult = await prisma.item.aggregate({
+      where: { listId: listIdNum },
+      _max: { position: true },
+    });
+    const nextPosition = (positionResult._max.position ?? -1) + 1;
 
     // Insert item
-    const query = `
-      INSERT INTO items (list_id, url, title, description, thumbnail_url, source_type, metadata, position)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
-    `;
+    const item = await prisma.item.create({
+      data: {
+        listId: listIdNum,
+        url,
+        title: metadata.title ?? null,
+        description: metadata.description ?? null,
+        thumbnailUrl: metadata.thumbnail ?? null,
+        sourceType: metadata.sourceType ?? null,
+        metadata: metadata.metadata ?? null,
+        position: nextPosition,
+      },
+    });
 
-    const result = await pool.query(query, [
-      listId,
-      url,
-      metadata.title,
-      metadata.description,
-      metadata.thumbnail,
-      metadata.sourceType,
-      JSON.stringify(metadata.metadata),
-      nextPosition,
-    ]);
-
-    res.status(201).json({ item: result.rows[0] });
+    res.status(201).json({ item: serializeItem(item) });
   } catch (error) {
     console.error('Error adding item:', error);
     res.status(500).json({ error: 'Failed to add item' });
@@ -67,23 +80,26 @@ export const getListItems = async (req: AuthRequest, res: Response) => {
   try {
     const { uid } = req.user!;
     const { listId } = req.params;
+    const listIdNum = Number(listId);
+    if (Number.isNaN(listIdNum)) {
+      return res.status(400).json({ error: 'Invalid list id' });
+    }
 
     // Verify list belongs to user
-    const listCheck = await pool.query(
-      'SELECT * FROM lists WHERE id = $1 AND user_id = $2',
-      [listId, uid]
-    );
+    const listCheck = await prisma.list.findFirst({
+      where: { id: listIdNum, userId: uid },
+    });
 
-    if (listCheck.rows.length === 0) {
+    if (!listCheck) {
       return res.status(404).json({ error: 'List not found' });
     }
 
-    const result = await pool.query(
-      'SELECT * FROM items WHERE list_id = $1 ORDER BY position ASC',
-      [listId]
-    );
+    const result = await prisma.item.findMany({
+      where: { listId: listIdNum },
+      orderBy: { position: 'asc' },
+    });
 
-    res.json({ items: result.rows });
+    res.json({ items: result.map(serializeItem) });
   } catch (error) {
     console.error('Error getting items:', error);
     res.status(500).json({ error: 'Failed to get items' });
@@ -94,20 +110,23 @@ export const deleteItem = async (req: AuthRequest, res: Response) => {
   try {
     const { uid } = req.user!;
     const { id } = req.params;
+    const itemId = Number(id);
+
+    if (Number.isNaN(itemId)) {
+      return res.status(400).json({ error: 'Invalid item id' });
+    }
 
     // Verify item belongs to user's list
-    const itemCheck = await pool.query(
-      `SELECT i.* FROM items i
-       JOIN lists l ON i.list_id = l.id
-       WHERE i.id = $1 AND l.user_id = $2`,
-      [id, uid]
-    );
+    const itemCheck = await prisma.item.findUnique({
+      where: { id: itemId },
+      include: { list: true },
+    });
 
-    if (itemCheck.rows.length === 0) {
+    if (!itemCheck || itemCheck.list.userId !== uid) {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    await pool.query('DELETE FROM items WHERE id = $1', [id]);
+    await prisma.item.delete({ where: { id: itemId } });
 
     res.json({ message: 'Item deleted successfully' });
   } catch (error) {

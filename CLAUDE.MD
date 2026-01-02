@@ -8,7 +8,7 @@ Complete step-by-step guide for setting up your Pinterest-style list app backend
 ```bash
 # Core dependencies
 npm install express cors dotenv
-npm install firebase-admin
+npm install @clerk/backend @clerk/express
 npm install pg
 npm install axios cheerio
 npm install sharp
@@ -33,8 +33,7 @@ Your structure should look like:
 listapp-server/
 ├── src/
 │   ├── config/
-│   │   ├── database.ts
-│   │   └── firebase.ts
+│   │   └── database.ts
 │   ├── middleware/
 │   │   └── auth.ts
 │   ├── routes/
@@ -59,12 +58,12 @@ listapp-server/
 └── tsconfig.json
 ```
 
-## Step 6: Setup Firebase Admin SDK
+## Step 6: Setup Clerk Authentication
 
-### Get Firebase Service Account Key:
-1. Go to Firebase Console → Project Settings → Service Accounts
-2. Click "Generate New Private Key"
-3. Save the JSON file as `firebase-service-account.json` in your project root
+### Get Clerk API Keys:
+1. Go to Clerk Dashboard → API Keys
+2. Copy your Secret Key (starts with `sk_test_` or `sk_live_`)
+3. Copy your Publishable Key (starts with `pk_test_` or `pk_live_`)
 
 ### Create `.env` file:
 
@@ -72,8 +71,9 @@ listapp-server/
 PORT=3000
 NODE_ENV=development
 
-# Firebase
-FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
+# Clerk
+CLERK_SECRET_KEY=sk_test_your_secret_key_here
+CLERK_PUBLISHABLE_KEY=pk_test_your_publishable_key_here
 
 # Database
 DB_HOST=localhost
@@ -87,23 +87,7 @@ AWS_S3_BUCKET=your-bucket-name
 AWS_REGION=us-east-1
 ```
 
-### Create `src/config/firebase.ts`:
-
-```typescript
-import admin from 'firebase-admin';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
-
-const serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT_PATH!);
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-export const auth = admin.auth();
-export default admin;
-```
+**Note:** No separate Clerk config file needed; SDK auto-initializes from environment variables.
 
 ## Step 7: Setup PostgreSQL Database
 
@@ -156,9 +140,9 @@ export default pool;
 ### Create `src/models/db.sql`:
 
 ```sql
--- Users table (using Firebase UID as primary key)
+-- Users table (using Clerk User ID as primary key)
 CREATE TABLE users (
-  id VARCHAR(128) PRIMARY KEY, -- Firebase UID
+  id VARCHAR(128) PRIMARY KEY, -- Clerk User ID (format: user_xxxxx)
   email VARCHAR(255) UNIQUE NOT NULL,
   display_name VARCHAR(255),
   photo_url TEXT,
@@ -286,9 +270,18 @@ export interface UrlMetadata {
 
 ```typescript
 import { Request, Response, NextFunction } from 'express';
-import { auth } from '../config/firebase';
+import { createClerkClient, verifyToken } from '@clerk/backend';
 import { AuthRequest } from '../types';
 
+// Initialize Clerk client
+const clerkClient = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+});
+
+/**
+ * Authentication middleware using Clerk session tokens.
+ * Verifies the Bearer token and attaches user info to req.user.
+ */
 export const authenticate = async (
   req: Request,
   res: Response,
@@ -297,22 +290,47 @@ export const authenticate = async (
   try {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'No token provided' });
     }
 
     const token = authHeader.split('Bearer ')[1];
 
-    // Verify Firebase ID token
-    const decodedToken = await auth.verifyIdToken(token);
+    try {
+      // Verify Clerk session token
+      const payload = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY!,
+      });
 
-    // Attach user info to request
-    (req as AuthRequest).user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email,
-    };
+      if (!payload || !payload.sub) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
 
-    next();
+      const userId = payload.sub;
+
+      // Fetch user details from Clerk to get email
+      const user = await clerkClient.users.getUser(userId);
+
+      // Get primary email address
+      const email = user.emailAddresses.find(
+        e => e.id === user.primaryEmailAddressId
+      )?.emailAddress;
+
+      if (!email) {
+        return res.status(401).json({ error: 'User email not available' });
+      }
+
+      // Attach user info to request (maintaining same interface as Firebase)
+      (req as AuthRequest).user = {
+        uid: userId,
+        email,
+      };
+
+      next();
+    } catch (verifyError) {
+      console.error('Token verification error:', verifyError);
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
   } catch (error) {
     console.error('Authentication error:', error);
     return res.status(401).json({ error: 'Invalid or expired token' });
@@ -815,7 +833,7 @@ import express from 'express';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import pool from './config/database';
-import './config/firebase'; // Initialize Firebase
+// Clerk SDK auto-initializes from CLERK_SECRET_KEY env var
 
 // Routes
 import authRoutes from './routes/auth';
@@ -889,22 +907,22 @@ You can test with curl or Postman:
 # Health check
 curl http://localhost:3000/health
 
-# After getting Firebase token from client:
+# After getting Clerk session token from client:
 # Sync user
 curl -X POST http://localhost:3000/api/auth/sync \
-  -H "Authorization: Bearer YOUR_FIREBASE_TOKEN" \
+  -H "Authorization: Bearer YOUR_CLERK_SESSION_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"displayName":"John Doe","photoUrl":"https://example.com/photo.jpg"}'
 
 # Create a list
 curl -X POST http://localhost:3000/api/lists \
-  -H "Authorization: Bearer YOUR_FIREBASE_TOKEN" \
+  -H "Authorization: Bearer YOUR_CLERK_SESSION_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"My Favorite Videos","description":"Cool stuff I found"}'
 
 # Add an item
 curl -X POST http://localhost:3000/api/items \
-  -H "Authorization: Bearer YOUR_FIREBASE_TOKEN" \
+  -H "Authorization: Bearer YOUR_CLERK_SESSION_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"listId":1,"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
 ```

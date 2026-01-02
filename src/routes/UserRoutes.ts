@@ -1,5 +1,4 @@
-import { isNumber } from 'jet-validators';
-import { transform } from 'jet-validators/utils';
+import { isNonEmptyString } from 'jet-validators';
 
 import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import UserService from '@src/services/UserService';
@@ -16,7 +15,7 @@ import { parseReq } from './common/util';
 const Validators = {
   add: parseReq({ user: User.test }),
   update: parseReq({ user: User.test }),
-  delete: parseReq({ id: transform(Number, isNumber) }),
+  delete: parseReq({ id: isNonEmptyString }),
 } as const;
 
 

@@ -89,8 +89,7 @@ describe('UserRouter', () => {
     // Success
     it(`should return a status code of "${HttpStatusCodes.OK}" if the ` + 
     'request was successful.', async () => {
-      const user = DB_USERS[0];
-      user.name = 'Bill';
+      const user = { ...dbUsers[0], name: 'Bill' };
       const res = await agent.put(Paths.Users.Update).send({ user });
       expect(res.status).toBe(HttpStatusCodes.OK);
     });
@@ -99,8 +98,8 @@ describe('UserRouter', () => {
     it('should return a JSON object with an error message and a status code ' +
     `of "${HttpStatusCodes.BAD_REQUEST}" if the user param was missing`, 
     async () => {
-      const user = User.new();
-      user.id = ('5' as unknown as number);
+      const user = User.new({ name: 'Bad User', email: 'bad@test.com' });
+      (user as any).id = 5 as unknown as string;
       const res: TRes = await agent.put(Paths.Users.Update).send({ user });
       expect(res.status).toBe(HttpStatusCodes.BAD_REQUEST);
       const errorObj = parseValidationErr(res.body.error);
@@ -113,7 +112,7 @@ describe('UserRouter', () => {
     it('should return a JSON object with the error message of ' + 
     `"${USER_NOT_FOUND_ERR}" and a status code of ` + 
     `"${HttpStatusCodes.NOT_FOUND}" if the id was not found.`, async () => {
-      const user = User.new({ id: 4, name: 'a', email: 'a@a.com' }),
+      const user = User.new({ id: 'user-not-found', name: 'a', email: 'a@a.com' }),
         res: TRes = await agent.put(Paths.Users.Update).send({ user });
       expect(res.status).toBe(HttpStatusCodes.NOT_FOUND);
       expect(res.body.error).toBe(USER_NOT_FOUND_ERR);
@@ -123,13 +122,13 @@ describe('UserRouter', () => {
   // Delete User
   describe(`"DELETE:${Paths.Users.Delete}"`, () => {
 
-    const getPath = (id: number) => insertUrlParams(Paths.Users.Delete, 
+    const getPath = (id: string) => insertUrlParams(Paths.Users.Delete, 
       { id });
 
     // Success
     it(`should return a status code of "${HttpStatusCodes.OK}" if the ` + 
     'request was successful.', async () => {
-      const id = dbUsers[0].id,
+      const id = dbUsers[0].id!,
         res = await agent.delete(getPath(id));
       expect(res.status).toBe(HttpStatusCodes.OK);
     });
@@ -138,7 +137,7 @@ describe('UserRouter', () => {
     it('should return a JSON object with the error message of ' + 
     `"${USER_NOT_FOUND_ERR}" and a status code of ` + 
     `"${HttpStatusCodes.NOT_FOUND}" if the id was not found.`, async () => {
-      const res: TRes = await agent.delete(getPath(-1));
+      const res: TRes = await agent.delete(getPath('missing-user-id'));
       expect(res.status).toBe(HttpStatusCodes.NOT_FOUND);
       expect(res.body.error).toBe(USER_NOT_FOUND_ERR);
     });

@@ -26,14 +26,20 @@ function getAll(): Promise<IUser[]> {
 /**
  * Add one user.
  */
-function addOne(user: IUser): Promise<void> {
+function addOne(user: IUser): Promise<IUser> {
   return UserRepo.add(user);
 }
 
 /**
  * Update one user.
  */
-async function updateOne(user: IUser): Promise<void> {
+async function updateOne(user: IUser): Promise<IUser> {
+  if (!user.id) {
+    throw new RouteError(
+      HttpStatusCodes.BAD_REQUEST,
+      'User id is required',
+    );
+  }
   const persists = await UserRepo.persists(user.id);
   if (!persists) {
     throw new RouteError(
@@ -42,13 +48,26 @@ async function updateOne(user: IUser): Promise<void> {
     );
   }
   // Return user
-  return UserRepo.update(user);
+  const updated = await UserRepo.update(user);
+  if (!updated) {
+    throw new RouteError(
+      HttpStatusCodes.NOT_FOUND,
+      USER_NOT_FOUND_ERR,
+    );
+  }
+  return updated;
 }
 
 /**
  * Delete a user by their id.
  */
-async function _delete(id: number): Promise<void> {
+async function _delete(id: string): Promise<void> {
+  if (!id) {
+    throw new RouteError(
+      HttpStatusCodes.BAD_REQUEST,
+      'User id is required',
+    );
+  }
   const persists = await UserRepo.persists(id);
   if (!persists) {
     throw new RouteError(

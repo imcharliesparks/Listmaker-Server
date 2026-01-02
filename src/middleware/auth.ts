@@ -1,7 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
-import { auth } from '../config/firebase';
+import { createClerkClient, verifyToken } from '@clerk/backend';
 import { AuthRequest } from '../types';
 
+// Initialize Clerk client
+const clerkClient = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+});
+
+/**
+ * Authentication middleware using Clerk session tokens.
+ * Verifies the Bearer token and attaches user info to req.user.
+ */
 export const authenticate = async (
   req: Request,
   res: Response,
@@ -16,16 +25,41 @@ export const authenticate = async (
 
     const token = authHeader.split('Bearer ')[1];
 
-    // Verify Firebase ID token
-    const decodedToken = await auth.verifyIdToken(token);
+    try {
+      // Verify Clerk session token
+      const payload = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY!,
+      });
 
-    // Attach user info to request
-    (req as AuthRequest).user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email,
-    };
+      if (!payload || !payload.sub) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
 
-    next();
+      const userId = payload.sub;
+
+      // Fetch user details from Clerk to get email
+      const user = await clerkClient.users.getUser(userId);
+
+      // Get primary email address
+      const email = user.emailAddresses.find(
+        e => e.id === user.primaryEmailAddressId
+      )?.emailAddress;
+
+      if (!email) {
+        return res.status(401).json({ error: 'User email not available' });
+      }
+
+      // Attach user info to request (maintaining same interface as Firebase)
+      (req as AuthRequest).user = {
+        uid: userId,
+        email,
+      };
+
+      next();
+    } catch (verifyError) {
+      console.error('Token verification error:', verifyError);
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
   } catch (error) {
     console.error('Authentication error:', error);
     return res.status(401).json({ error: 'Invalid or expired token' });

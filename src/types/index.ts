@@ -1,7 +1,7 @@
 import { Request } from 'express';
 
 export interface User {
-  id: string; // Firebase UID
+  id: string; // Clerk User ID (format: user_xxxxx)
   email: string;
   display_name?: string;
   photo_url?: string;
@@ -34,9 +34,13 @@ export interface Item {
   updated_at?: Date;
 }
 
+/**
+ * Express request with authenticated user context.
+ * user.uid contains Clerk User ID (format: user_xxxxx)
+ */
 export interface AuthRequest extends Request {
   user?: {
-    uid: string;
+    uid: string; // Clerk User ID
     email?: string;
   };
 }

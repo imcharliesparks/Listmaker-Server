@@ -1,6 +1,18 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import pool from '../config/database';
+import { prisma } from '../config/prisma';
+
+const serializeList = (list: any, itemCount?: number) => ({
+  id: list.id,
+  user_id: list.userId,
+  title: list.title,
+  description: list.description,
+  is_public: list.isPublic,
+  cover_image: list.coverImage,
+  created_at: list.createdAt,
+  updated_at: list.updatedAt,
+  ...(typeof itemCount === 'number' ? { item_count: itemCount } : {}),
+});
 
 export const createList = async (req: AuthRequest, res: Response) => {
   try {
@@ -14,15 +26,16 @@ export const createList = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Title must not exceed 255 characters' });
     }
 
-    const query = `
-      INSERT INTO lists (user_id, title, description, is_public)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `;
+    const list = await prisma.list.create({
+      data: {
+        userId: uid,
+        title: title.trim(),
+        description: description ?? null,
+        isPublic: Boolean(isPublic),
+      },
+    });
 
-    const result = await pool.query(query, [uid, title, description, isPublic || false]);
-
-    res.status(201).json({ list: result.rows[0] });
+    res.status(201).json({ list: serializeList(list) });
   } catch (error) {
     console.error('Error creating list:', error);
     res.status(500).json({ error: 'Failed to create list' });
@@ -33,18 +46,15 @@ export const getUserLists = async (req: AuthRequest, res: Response) => {
   try {
     const { uid } = req.user!;
 
-    const query = `
-      SELECT l.*, COUNT(i.id) as item_count
-      FROM lists l
-      LEFT JOIN items i ON l.id = i.list_id
-      WHERE l.user_id = $1
-      GROUP BY l.id
-      ORDER BY l.created_at DESC
-    `;
+    const lists = await prisma.list.findMany({
+      where: { userId: uid },
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { items: true } } },
+    });
 
-    const result = await pool.query(query, [uid]);
-
-    res.json({ lists: result.rows });
+    res.json({
+      lists: lists.map(list => serializeList(list, list._count.items)),
+    });
   } catch (error) {
     console.error('Error getting lists:', error);
     res.status(500).json({ error: 'Failed to get lists' });
@@ -55,19 +65,21 @@ export const getListById = async (req: AuthRequest, res: Response) => {
   try {
     const { uid } = req.user!;
     const { id } = req.params;
+    const listId = Number(id);
 
-    const query = `
-      SELECT * FROM lists
-      WHERE id = $1 AND user_id = $2
-    `;
+    if (Number.isNaN(listId)) {
+      return res.status(400).json({ error: 'Invalid list id' });
+    }
 
-    const result = await pool.query(query, [id, uid]);
+    const list = await prisma.list.findFirst({
+      where: { id: listId, userId: uid },
+    });
 
-    if (result.rows.length === 0) {
+    if (!list) {
       return res.status(404).json({ error: 'List not found' });
     }
 
-    res.json({ list: result.rows[0] });
+    res.json({ list: serializeList(list) });
   } catch (error) {
     console.error('Error getting list:', error);
     res.status(500).json({ error: 'Failed to get list' });
@@ -79,23 +91,35 @@ export const updateList = async (req: AuthRequest, res: Response) => {
     const { uid } = req.user!;
     const { id } = req.params;
     const { title, description, isPublic } = req.body;
+    const listId = Number(id);
 
-    const query = `
-      UPDATE lists
-      SET title = COALESCE($1, title),
-          description = COALESCE($2, description),
-          is_public = COALESCE($3, is_public)
-      WHERE id = $4 AND user_id = $5
-      RETURNING *
-    `;
+    if (Number.isNaN(listId)) {
+      return res.status(400).json({ error: 'Invalid list id' });
+    }
 
-    const result = await pool.query(query, [title, description, isPublic, id, uid]);
+    const list = await prisma.list.findFirst({
+      where: { id: listId, userId: uid },
+    });
 
-    if (result.rows.length === 0) {
+    if (!list) {
       return res.status(404).json({ error: 'List not found' });
     }
 
-    res.json({ list: result.rows[0] });
+    const updated = await prisma.list.update({
+      where: { id: listId },
+      data: {
+        title: title ?? list.title,
+        description: description ?? list.description,
+        isPublic: typeof isPublic === 'boolean' ? isPublic : list.isPublic,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: 'List not found' });
+    }
+
+    res.json({ list: serializeList(updated) });
   } catch (error) {
     console.error('Error updating list:', error);
     res.status(500).json({ error: 'Failed to update list' });
@@ -106,15 +130,21 @@ export const deleteList = async (req: AuthRequest, res: Response) => {
   try {
     const { uid } = req.user!;
     const { id } = req.params;
+    const listId = Number(id);
 
-    const result = await pool.query(
-      'DELETE FROM lists WHERE id = $1 AND user_id = $2 RETURNING *',
-      [id, uid]
-    );
+    if (Number.isNaN(listId)) {
+      return res.status(400).json({ error: 'Invalid list id' });
+    }
 
-    if (result.rows.length === 0) {
+    const list = await prisma.list.findFirst({
+      where: { id: listId, userId: uid },
+    });
+
+    if (!list) {
       return res.status(404).json({ error: 'List not found' });
     }
+
+    await prisma.list.delete({ where: { id: listId } });
 
     res.json({ message: 'List deleted successfully' });
   } catch (error) {

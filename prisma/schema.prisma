@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id
+  email       String   @unique
+  displayName String?  @map("display_name")
+  photoUrl    String?  @map("photo_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  lists List[]
+
+  @@map("users")
+}
+
+model List {
+  id          Int       @id @default(autoincrement())
+  userId      String    @map("user_id")
+  title       String
+  description String?
+  isPublic    Boolean   @default(false) @map("is_public")
+  coverImage  String?   @map("cover_image")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items Item[]
+
+  @@index([userId], map: "idx_lists_user_id")
+  @@map("lists")
+}
+
+model Item {
+  id           Int       @id @default(autoincrement())
+  listId       Int       @map("list_id")
+  url          String
+  title        String?
+  description  String?
+  thumbnailUrl String?   @map("thumbnail_url")
+  sourceType   String?   @map("source_type")
+  metadata     Json?     @map("metadata")
+  position     Int       @default(0)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @map("updated_at")
+
+  list List @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@index([listId], map: "idx_items_list_id")
+  @@index([sourceType], map: "idx_items_source_type")
+  @@map("items")
+}

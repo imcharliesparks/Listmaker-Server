@@ -1,28 +1,41 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import pool from '../config/database';
+import { prisma } from '../config/prisma';
+
+const serializeUser = (user: any) => ({
+  id: user.id,
+  email: user.email,
+  display_name: user.displayName ?? null,
+  photo_url: user.photoUrl ?? null,
+  created_at: user.createdAt,
+  updated_at: user.updatedAt,
+});
 
 export const syncUser = async (req: AuthRequest, res: Response) => {
   try {
     const { uid, email } = req.user!;
     const { displayName, photoUrl } = req.body;
+    if (!email) {
+      return res.status(401).json({ error: 'User email not available' });
+    }
 
-    // Insert or update user
-    const query = `
-      INSERT INTO users (id, email, display_name, photo_url)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (id)
-      DO UPDATE SET
-        email = EXCLUDED.email,
-        display_name = EXCLUDED.display_name,
-        photo_url = EXCLUDED.photo_url,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING *
-    `;
+    const user = await prisma.user.upsert({
+      where: { id: uid },
+      create: {
+        id: uid,
+        email,
+        displayName: displayName ?? null,
+        photoUrl: photoUrl ?? null,
+      },
+      update: {
+        email,
+        displayName: displayName ?? null,
+        photoUrl: photoUrl ?? null,
+        updatedAt: new Date(),
+      },
+    });
 
-    const result = await pool.query(query, [uid, email, displayName, photoUrl]);
-
-    res.json({ user: result.rows[0] });
+    res.json({ user: serializeUser(user) });
   } catch (error) {
     console.error('Error syncing user:', error);
     res.status(500).json({ error: 'Failed to sync user' });
@@ -33,13 +46,15 @@ export const getCurrentUser = async (req: AuthRequest, res: Response) => {
   try {
     const { uid } = req.user!;
 
-    const result = await pool.query('SELECT * FROM users WHERE id = $1', [uid]);
+    const user = await prisma.user.findUnique({
+      where: { id: uid },
+    });
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ user: result.rows[0] });
+    res.json({ user: serializeUser(user) });
   } catch (error) {
     console.error('Error getting user:', error);
     res.status(500).json({ error: 'Failed to get user' });

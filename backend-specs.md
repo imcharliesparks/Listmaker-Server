@@ -1,6 +1,6 @@
 ## Overview
 - **Purpose:** Backend API for a Pinterest-style list application. Provides auth-backed CRUD for users, lists, and list items with URL metadata extraction.
-- **Stack:** Node.js, Express, TypeScript, PostgreSQL (via `pg`), Firebase Admin for authentication, Axios + Cheerio for metadata scraping, CORS configured by env.
+- **Stack:** Node.js, Express, TypeScript, PostgreSQL (via `pg`), Clerk for authentication, Axios + Cheerio for metadata scraping, CORS configured by env.
 - **Entry point:** `src/index.ts` (compiled output in `dist` for production). Health check at `/health`.
 
 ## Runtime & Environment
@@ -8,12 +8,12 @@
 - **Environment:** `NODE_ENV` (`development` or `production`).
 - **CORS:** `CORS_ORIGIN` (comma-separated list of allowed origins). Requests without an Origin header are allowed. All API routes require `credentials: true`.
 - **Database:** Either `DATABASE_URL` (preferred; enables SSL with `rejectUnauthorized: false` by default) or discrete `DB_HOST`, `DB_PORT` (default 5432), `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
-- **Firebase Admin:** `FIREBASE_SERVICE_ACCOUNT_PATH` (absolute or relative path to the service account JSON). The file must exist at startup.
+- **Clerk Auth:** `CLERK_SECRET_KEY` (required; from Clerk Dashboard), `CLERK_PUBLISHABLE_KEY` (optional; for frontend validation).
 - **Security note:** `helmet` is currently not applied. README notes it should be enabled for production.
 
 ## Data Model (PostgreSQL)
 - **users**
-  - `id` `varchar(128)` **PK** (Firebase UID)
+  - `id` `varchar(128)` **PK** (Clerk User ID, format: user_xxxxx)
   - `email` `varchar(255)` **unique, required**
   - `display_name` `varchar(255)`
   - `photo_url` `text`
@@ -44,7 +44,7 @@
 - **Triggers:** `update_*_updated_at` maintain `updated_at` on updates.
 
 ## Authentication & Authorization
-- **Scheme:** Firebase ID tokens (Bearer). Middleware verifies token via Firebase Admin, rejects missing/invalid tokens with `401`.
+- **Scheme:** Clerk session tokens (Bearer). Middleware verifies token via Clerk SDK, rejects missing/invalid tokens with `401`.
 - **Scope:** All `/api/*` routes require authentication. `/health` is public.
 
 ## API Surface
@@ -56,13 +56,13 @@
 
 ### Auth
 - `POST /api/auth/sync`
-  - **Auth:** Required (Bearer Firebase ID token).
+  - **Auth:** Required (Bearer Clerk session token).
   - **Body:** `{ displayName?: string, photoUrl?: string }`.
-  - **Behavior:** Upsert the authenticated Firebase user into `users` table (id from token UID; email from token).
+  - **Behavior:** Upsert the authenticated Clerk user into `users` table (id from Clerk user ID; email extracted from Clerk user object).
   - **Responses:** `200 { user }` on success; `500` on failure.
 - `GET /api/auth/me`
   - **Auth:** Required.
-  - **Behavior:** Fetch current user row by Firebase UID.
+  - **Behavior:** Fetch current user row by Clerk user ID.
   - **Responses:** `200 { user }`; `404` if not found; `500` on error.
 
 ### Lists
@@ -126,6 +126,6 @@
 - Legacy sample routes under `src/routes/index.ts` (`/api/users/*` using a mock JSON datastore) are present but **not mounted** by `src/index.ts`. External services should use the `/api/auth`, `/api/lists`, `/api/items`, and `/health` endpoints above.
 
 ## Typical Flows
-- **User sign-in sync:** Client obtains Firebase ID token → `POST /api/auth/sync` to upsert user profile.
-- **List CRUD:** Auth header with Firebase token → create/list/get/update/delete via `/api/lists`.
+- **User sign-in sync:** Client obtains Clerk session token → `POST /api/auth/sync` to upsert user profile.
+- **List CRUD:** Auth header with Clerk session token → create/list/get/update/delete via `/api/lists`.
 - **Add item:** Auth header → `POST /api/items` with `listId` + `url` → service scrapes metadata and stores item.

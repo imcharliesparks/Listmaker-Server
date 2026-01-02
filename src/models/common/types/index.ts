@@ -1,5 +1,6 @@
 
 export interface IModel {
-  id: number;
-  created: Date;
+  id?: string;
+  created?: Date;
+  updated?: Date;
 }
