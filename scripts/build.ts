@@ -20,7 +20,6 @@ import childProcess from 'child_process';
     await remove('./temp/');
   } catch (err) {
     logger.err(err);
-    // eslint-disable-next-line n/no-process-exit
     process.exit(1);
   }
 })();
