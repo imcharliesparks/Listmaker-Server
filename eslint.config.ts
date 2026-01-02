@@ -2,9 +2,9 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import stylistic from '@stylistic/eslint-plugin';
 import nodePlugin from 'eslint-plugin-n';
-import { defineConfig } from 'eslint/config'
+import { defineConfig } from 'eslint/config';
 
-export default defineConfig(
+export default defineConfig([
   eslint.configs.recommended,
   nodePlugin.configs['flat/recommended-script'],
   ...tseslint.configs.strictTypeChecked,
@@ -97,4 +97,4 @@ export default defineConfig(
       'prefer-const': 'warn',
     },
   },
-);
+]);

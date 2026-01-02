@@ -1,6 +1,4 @@
 import insertUrlParams from 'inserturlparams';
-import { customDeepCompare } from 'jet-validators/utils';
-
 import UserRepo from '@src/repos/UserRepo';
 import User, { IUser } from '@src/models/User';
 import { USER_NOT_FOUND_ERR } from '@src/services/UserService';
@@ -26,9 +24,11 @@ const DB_USERS = [
 
 // Don't compare "id" and "created" cause those are set dynamically by the 
 // database
-const compareUserArrays = customDeepCompare({
-  onlyCompareProps: ['name', 'email'],
-});
+const compareUserArrays = (actual: IUser[], expected: readonly IUser[]) => {
+  if (actual.length !== expected.length) return false;
+  return actual.every((u, idx) =>
+    u.name === expected[idx].name && u.email === expected[idx].email);
+};
 
 
 /******************************************************************************
